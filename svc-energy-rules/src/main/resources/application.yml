@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: svc-energy-rules
+  datasource:
+    url: jdbc:postgresql://${T32_DB_HOST:localhost}:${T32_DB_PORT:55432}/${T32_DB_NAME:t32}
+    username: ${T32_DB_USER:t32}
+    # Sin secreto en el repo: si no se define, la conexión falla por autenticación.
+    # En tests la conexión la aporta Testcontainers (@ServiceConnection).
+    password: ${T32_DB_PASSWORD:}
+    hikari:
+      # BR-001: la sesión trabaja en UTC con independencia de la zona de la JVM
+      # (PgJDBC envía por defecto la zona de la JVM, p. ej. Europe/Madrid).
+      connection-init-sql: SET TIME ZONE 'UTC'
+  flyway:
+    schemas: t32
+    default-schema: t32
+    create-schemas: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      # El esquema lo gestiona solo Flyway (NFR-006).
+      ddl-auto: none
+    properties:
+      hibernate:
+        default_schema: t32
+        jdbc:
+          time_zone: UTC
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never

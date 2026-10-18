@@ -1,0 +1,35 @@
+# Entorno local T3.2 (F-001 / BLK-001).
+# Uso:  cp infra/.env.example infra/.env   (y edita la contraseña)
+#       docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+#
+# La imagen debe coincidir con TIMESCALEDB_IMAGE en
+# svc-energy-rules/src/test/java/.../TestcontainersConfiguration.java (NFR-005);
+# ImageVersionConsistencyTest lo verifica.
+name: masai-t32
+
+services:
+  timescaledb:
+    # Misma línea 2.26 que MESView (catálogo 2.26.1 en db/mesview/script.sql), último parche.
+    # Edición no-OSS: los continuous aggregates (ADR-005) requieren la licencia community (TSL).
+    image: timescale/timescaledb:2.26.4-pg16
+    container_name: masai-t32-db
+    environment:
+      POSTGRES_DB: ${T32_DB_NAME:-t32}
+      POSTGRES_USER: ${T32_DB_USER:-t32}
+      POSTGRES_PASSWORD: ${T32_DB_PASSWORD:?Define T32_DB_PASSWORD en infra/.env}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # Solo en loopback: F-001 no tiene autenticación (D-08).
+      - "127.0.0.1:${T32_DB_PORT:-55432}:5432"
+    volumes:
+      - t32-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  t32-data:

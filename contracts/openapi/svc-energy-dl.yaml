@@ -1,0 +1,171 @@
+openapi: 3.0.3
+info:
+  title: svc-energy-dl — Scoring de anomalías DL
+  version: 0.1.0-draft
+  description: |
+    Contrato entre `svc-energy-rules` (cliente) y `svc-energy-dl` (proveedor). Es el acuerdo vinculante EXOS↔CETECK
+    (funcional §8). Se trata de un BORRADOR: los cambios incompatibles requieren subir la versión mayor y avisar a ambos equipos.
+
+    Convenciones:
+    - Todas las marcas de tiempo son ISO-8601 en UTC (`Z`).
+    - `centro_id` y `propiedad_id` son claves de negocio de T3.2 (ADR-003).
+    - Las ventanas pueden tener huecos y muestreo irregular (funcional §6.4).
+    - El cliente aplica un timeout explícito y, si falla, opera en modo solo-reglas (B4).
+servers:
+  - url: http://svc-energy-dl:8000
+paths:
+  /v1/score:
+    post:
+      operationId: score
+      summary: Calcula el score de anomalía de una ventana de medidas de un centro
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScoreRequest' }
+      responses:
+        '200':
+          description: Scoring realizado (puede ser parcial; ver `status`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404':
+          description: No hay ningún modelo publicado para el centro o la versión pedida
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /v1/models/active:
+    get:
+      operationId: getActiveModel
+      summary: Modelo activo para un centro
+      parameters:
+        - name: centro_id
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/BusinessKey' }
+      responses:
+        '200':
+          description: Modelo activo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModelInfo' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /health:
+    get:
+      operationId: health
+      responses:
+        '200':
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [UP, DEGRADED, DOWN] }
+components:
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, maxLength: 64 }
+  responses:
+    Problem:
+      description: Error (RFC 7807)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    BusinessKey:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9_\-.]{0,63}$'
+    ScoreRequest:
+      type: object
+      required: [centro_id, ventana]
+      properties:
+        centro_id: { $ref: '#/components/schemas/BusinessKey' }
+        model_version:
+          type: string
+          description: Opcional. Si se omite, se usa el modelo activo del centro.
+        ventana:
+          type: array
+          minItems: 1
+          maxItems: 100000
+          items: { $ref: '#/components/schemas/Punto' }
+    Punto:
+      type: object
+      required: [ts, propiedad_id, valor]
+      properties:
+        ts: { type: string, format: date-time }
+        propiedad_id: { $ref: '#/components/schemas/BusinessKey' }
+        valor: { type: number, format: double }
+        calidad: { type: string, enum: [good, bad, estimado], default: good }
+    ScoreResponse:
+      type: object
+      required: [centro_id, model_version, status, ts_ref_inicio, ts_ref_fin, score_global, umbral_global, scores_por_variable]
+      properties:
+        centro_id: { $ref: '#/components/schemas/BusinessKey' }
+        model_version: { type: string }
+        status:
+          type: string
+          enum: [OK, PARTIAL, INSUFFICIENT_DATA]
+          description: |
+            - PARTIAL: faltan variables que el modelo espera (ver `variables_ausentes`).
+            - INSUFFICIENT_DATA: no hay puntos suficientes para formar una ventana; los scores son nulos.
+        ts_ref_inicio: { type: string, format: date-time }
+        ts_ref_fin: { type: string, format: date-time }
+        score_global:
+          type: number
+          format: double
+          nullable: true
+          description: Error de reconstrucción global (≥ 0). Más alto = más anómalo.
+        umbral_global: { type: number, format: double, nullable: true }
+        es_anomalia: { type: boolean, nullable: true }
+        scores_por_variable:
+          type: array
+          items: { $ref: '#/components/schemas/ScoreVariable' }
+        variables_ausentes:
+          type: array
+          items: { $ref: '#/components/schemas/BusinessKey' }
+    ScoreVariable:
+      type: object
+      required: [propiedad_id, score, umbral, flag]
+      properties:
+        propiedad_id: { $ref: '#/components/schemas/BusinessKey' }
+        score: { type: number, format: double }
+        umbral: { type: number, format: double, description: Calculado solo con datos normales de entrenamiento }
+        flag: { type: boolean, description: score > umbral }
+        contribucion:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Parte del error global atribuible a esta variable (explicabilidad básica, funcional §2.2)
+    ModelInfo:
+      type: object
+      required: [centro_id, model_version, algoritmo, features, entrenado_en]
+      properties:
+        centro_id: { $ref: '#/components/schemas/BusinessKey' }
+        model_version: { type: string }
+        algoritmo: { type: string, example: conv_ae }
+        features:
+          type: array
+          items: { $ref: '#/components/schemas/BusinessKey' }
+        window_size: { type: integer, minimum: 1 }
+        entrenado_en: { type: string, format: date-time }
+        datos_hasta: { type: string, format: date-time }
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string, description: Código de error estable, p. ej. MODEL_NOT_FOUND }

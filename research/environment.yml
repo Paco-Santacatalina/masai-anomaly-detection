@@ -1,0 +1,42 @@
+name: deep-learning
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python
+  - python=3.11
+
+  # PyTorch (CPU — cambia a pytorch-cuda=12.1 si tienes GPU NVIDIA)
+  - pytorch
+  - torchvision
+  - cpuonly
+
+  # Data & ML
+  - numpy
+  - pandas
+  - scikit-learn
+  - scipy
+
+  # Visualización
+  - matplotlib
+  - seaborn
+
+  # MLflow
+  - mlflow
+
+  # Notebooks
+  - jupyter
+  - ipykernel
+  - ipywidgets
+
+  # Utilidades
+  - tqdm
+  - pip
+
+  - pip:
+    # Registro del kernel en VS Code
+    - ipykernel
+    # Métricas adicionales
+    - torchmetrics

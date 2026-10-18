@@ -1,0 +1,35 @@
+# Datos
+research/SKAB/
+data/
+*.parquet
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+mlruns/
+mlartifacts/
+
+# Java
+target/
+*.class
+
+# Node
+node_modules/
+dist/
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+
+# IDE / SO
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Claude local
+.claude/settings.local.json

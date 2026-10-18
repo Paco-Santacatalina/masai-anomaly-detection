@@ -1,0 +1,287 @@
+openapi: 3.0.3
+info:
+  title: svc-energy-rules — API T3.2
+  version: 0.1.0-draft
+  description: |
+    API de `svc-energy-rules`. Este BORRADOR solo cubre F-001 (catálogo, medidas e importaciones).
+    Reglas, alertas y feedback se añadirán en F-002 y F-003.
+
+    Convenciones:
+    - Marcas de tiempo en ISO-8601 UTC; se rechazan las que no traen offset.
+    - Errores en RFC 7807 (`application/problem+json`).
+    - En F-001 no hay autenticación y el servicio solo se expone en local (D-08).
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/centros:
+    get:
+      operationId: listCentros
+      parameters:
+        - name: padre
+          in: query
+          description: Filtra por los hijos directos de este centro
+          schema: { $ref: '#/components/schemas/BusinessKey' }
+      responses:
+        '200':
+          description: Lista de centros
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Centro' }
+  /api/v1/centros/{centroId}:
+    get:
+      operationId: getCentro
+      parameters:
+        - $ref: '#/components/parameters/CentroId'
+      responses:
+        '200':
+          description: Centro con sus propiedades medidas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CentroDetalle' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/propiedades:
+    get:
+      operationId: listPropiedades
+      responses:
+        '200':
+          description: Catálogo de propiedades
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Propiedad' }
+  /api/v1/centros/{centroId}/medidas:
+    get:
+      operationId: getMedidas
+      summary: Medidas crudas (sin bucket) o agregadas (con bucket) de un centro
+      parameters:
+        - $ref: '#/components/parameters/CentroId'
+        - name: propiedad
+          in: query
+          required: false
+          description: Una o varias propiedades. Si se omite, se devuelven todas las del centro.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/BusinessKey' }
+        - name: desde
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: hasta
+          in: query
+          required: true
+          description: Exclusivo
+          schema: { type: string, format: date-time }
+        - name: bucket
+          in: query
+          schema: { type: string, enum: ['15m', '1h'] }
+        - name: incluir_contexto
+          in: query
+          description: Solo en crudo. Añade `normalizable` y el contexto vigente.
+          schema: { type: boolean, default: false }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1000 }
+        - name: cursor
+          in: query
+          description: Cursor opaco devuelto en `siguiente_cursor`
+          schema: { type: string }
+      responses:
+        '200':
+          description: Página de medidas
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PaginaMedidas'
+                  - $ref: '#/components/schemas/PaginaAgregados'
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/v1/imports:
+    post:
+      operationId: createImport
+      summary: Importa un CSV (síncrono, con límite de tamaño)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [entidad, fichero]
+              properties:
+                entidad:
+                  type: string
+                  enum: [centros, propiedades, centro_propiedad, contexto, medidas]
+                fichero:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Lote procesado (puede contener filas rechazadas)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportLote' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+  /api/v1/imports/{importId}:
+    get:
+      operationId: getImport
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Resultado del lote
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportLote' }
+        '404': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    CentroId:
+      name: centroId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/BusinessKey' }
+  responses:
+    Problem:
+      description: Error (RFC 7807)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    BusinessKey:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9_\-.]{0,63}$'
+    TipoAgregacion:
+      type: string
+      enum: [magnitud, incremental, discreto]
+    Calidad:
+      type: string
+      enum: [good, bad, estimado]
+    EstadoProduccion:
+      type: string
+      enum: [produciendo, parado, mantenimiento]
+    Centro:
+      type: object
+      required: [centro_id, nombre]
+      properties:
+        centro_id: { $ref: '#/components/schemas/BusinessKey' }
+        centro_padre_id: { allOf: [{ $ref: '#/components/schemas/BusinessKey' }], nullable: true }
+        nombre: { type: string }
+        tipo_equipo: { type: string, nullable: true }
+        potencia_nominal: { type: number, format: double, minimum: 0, nullable: true, description: kW }
+    CentroDetalle:
+      allOf:
+        - $ref: '#/components/schemas/Centro'
+        - type: object
+          required: [propiedades]
+          properties:
+            propiedades:
+              type: array
+              items: { $ref: '#/components/schemas/BusinessKey' }
+    Propiedad:
+      type: object
+      required: [propiedad_id, unidad, tipo_agregacion, es_enpi]
+      properties:
+        propiedad_id: { $ref: '#/components/schemas/BusinessKey' }
+        nombre: { type: string }
+        unidad: { type: string }
+        tipo_agregacion: { $ref: '#/components/schemas/TipoAgregacion' }
+        es_enpi: { type: boolean }
+    Medida:
+      type: object
+      required: [ts, propiedad_id, valor, calidad]
+      properties:
+        ts: { type: string, format: date-time }
+        propiedad_id: { $ref: '#/components/schemas/BusinessKey' }
+        valor: { type: number, format: double }
+        calidad: { $ref: '#/components/schemas/Calidad' }
+        normalizable: { type: boolean, description: Solo si incluir_contexto=true }
+        contexto: { allOf: [{ $ref: '#/components/schemas/Contexto' }], nullable: true }
+    Contexto:
+      type: object
+      required: [ts_inicio, ts_fin, estado_produccion]
+      properties:
+        ts_inicio: { type: string, format: date-time }
+        ts_fin: { type: string, format: date-time }
+        orden_id: { type: string, nullable: true }
+        producto_id: { type: string, nullable: true }
+        turno_id: { type: string, nullable: true }
+        estado_produccion: { $ref: '#/components/schemas/EstadoProduccion' }
+    Agregado:
+      type: object
+      required: [bucket_inicio, propiedad_id, tipo_agregacion, n]
+      description: Los campos presentes dependen de tipo_agregacion (ADR-005).
+      properties:
+        bucket_inicio: { type: string, format: date-time }
+        propiedad_id: { $ref: '#/components/schemas/BusinessKey' }
+        tipo_agregacion: { $ref: '#/components/schemas/TipoAgregacion' }
+        n: { type: integer, description: Número de medidas válidas (sin calidad bad) }
+        n_bad: { type: integer }
+        avg: { type: number, format: double, nullable: true, description: magnitud }
+        min: { type: number, format: double, nullable: true, description: magnitud }
+        max: { type: number, format: double, nullable: true, description: magnitud }
+        incremento: { type: number, format: double, nullable: true, description: incremental / discreto (suma de deltas con corrección de reset) }
+        resets: { type: integer, nullable: true, description: incremental / discreto }
+        deltas_no_enteros: { type: integer, nullable: true, description: solo discreto (anomalías de dato) }
+    PaginaMedidas:
+      type: object
+      required: [centro_id, items]
+      properties:
+        centro_id: { $ref: '#/components/schemas/BusinessKey' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Medida' }
+        siguiente_cursor: { type: string, nullable: true }
+    PaginaAgregados:
+      type: object
+      required: [centro_id, bucket, items]
+      properties:
+        centro_id: { $ref: '#/components/schemas/BusinessKey' }
+        bucket: { type: string, enum: ['15m', '1h'] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Agregado' }
+        siguiente_cursor: { type: string, nullable: true }
+    ImportLote:
+      type: object
+      required: [import_id, entidad, estado, fichero, checksum_sha256, filas_leidas, filas_insertadas, filas_duplicadas, filas_rechazadas, creado_en]
+      properties:
+        import_id: { type: string, format: uuid }
+        entidad: { type: string, enum: [centros, propiedades, centro_propiedad, contexto, medidas] }
+        estado: { type: string, enum: [COMPLETED, COMPLETED_WITH_ERRORS, FAILED] }
+        fichero: { type: string }
+        checksum_sha256: { type: string }
+        filas_leidas: { type: integer }
+        filas_insertadas: { type: integer }
+        filas_duplicadas: { type: integer }
+        filas_conflicto: { type: integer, description: Duplicadas con valor distinto (supuesto BR-004) }
+        filas_rechazadas: { type: integer }
+        errores:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [linea, motivo]
+            properties:
+              linea: { type: integer }
+              motivo: { type: string }
+        creado_en: { type: string, format: date-time }
+        finalizado_en: { type: string, format: date-time, nullable: true }
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string }
