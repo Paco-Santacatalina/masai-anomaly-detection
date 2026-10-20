@@ -1,0 +1,28 @@
+# Configuración de mesview_export (F-001, BLK-007).
+# Decisiones de referencia: ADR-003 (revisión 2026-10-20), ADR-004 y OPEN-DECISIONS D-14 a D-20.
+
+# D-14: los timestamp sin zona de MESView (medidahist) están en esta zona.
+zona_horaria_origen = "Europe/Madrid"
+
+[contexto]
+# D-17: centro MES (centro.id) → nombre exacto del equipo que lo representa.
+# El contexto de medidahist se aplica a ese equipo y a todos sus descendientes.
+centro_mes_a_equipo = { 2 = "Linea Bombo 2" }
+
+# D-20 (supuesto pendiente de validar): estadotipo.id → estado_produccion.
+# Los estadotipo que no aparezcan aquí se descartan y se cuentan en informe.json.
+[contexto.estado_produccion]
+2 = "produciendo"  # PRODUCCION
+3 = "parado"       # PARO RUTINARIO
+4 = "parado"       # FALLO
+5 = "parado"       # NO PLANIFICADO
+6 = "parado"       # NO OPERATIVO
+
+[propiedades]
+# D-15: propiedad_id que son EnPI. energiaactividad está vacía en MESView.
+es_enpi = []
+
+[salida]
+# Reparte medidas en ficheros de como mucho N filas (medidas_0001.csv, …).
+# Unos 2 M de filas son ~150 MB, por debajo del límite de 200 MB de la API (ERR-005).
+max_filas_por_fichero = 2000000

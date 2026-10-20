@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataset-builder"
+version = "0.1.0"
+description = "Genera los CSV del contrato de datos de T3.2 (F-001, BLK-006/007)"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["dataset_builder"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
